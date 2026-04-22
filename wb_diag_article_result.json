@@ -1,0 +1,35 @@
+{
+  "article": 485389018,
+  "working_basket": "26",
+  "vol": 4853,
+  "part": 485389,
+  "results": {
+    "card.json": {
+      "status": "ok",
+      "basket": "26",
+      "name": "Аргинин, L arginine аминокислота, 180 капсул"
+    },
+    "control_article": {
+      "status": "ok",
+      "name": "Креатин моногидрат порошок creatine 300 г"
+    },
+    "sellers.json": {
+      "status": "ok",
+      "supplier": "ООО \"ХЭЛСКЕА СОЛЮШНС\""
+    },
+    "price-history.json": {
+      "status": "ok",
+      "price": 575,
+      "max_price": 778
+    },
+    "feedbacks": {
+      "status": "ok",
+      "url": "https://feedbacks2.wb.ru/feedbacks/v2/485389018",
+      "rating": "",
+      "feedbacks": 0
+    },
+    "card.wb.ru": {
+      "status": "fail"
+    }
+  }
+}
