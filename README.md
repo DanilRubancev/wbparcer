@@ -181,7 +181,7 @@ wb-parser/
 
 ## Парсинг
 
-Парсер использует публичное JSON API Wildberries (`search.wb.ru`).
+Парсер использует публичное JSON API Wildberries.
 При использовании вы подтверждайте согласие с правилами(https://docs.google.com/document/d/1y_1bcSHD8Uk0zHwFGxYz1OPzi0v9wVbJpM4hczHldXs/edit?tab=t.0#heading=h.tyklxmdx88zr)
 
 ---
