@@ -43,6 +43,7 @@ function setTheme(t) {
 }
 function toggleTheme() {
   setTheme(theme === 'dark' ? 'light' : 'dark');
+  localStorage.setItem('wb_theme', theme);
   renderApp();
 }
 
@@ -177,7 +178,14 @@ function renderAuth() {
         ${authMode === 'login' ? 'Войти' : 'Зарегистрироваться'}
       </button>
       ${authMode === 'register' ? `
-      <p class="consent-notice">При регистрации вы даёте <a href="https://docs.google.com/document/d/1y_1bcSHD8Uk0zHwFGxYz1OPzi0v9wVbJpM4hczHldXs/edit?usp=sharing" target="_blank" rel="noopener">согласие на обработку персональных данных</a></p>
+      <div class="form-group" style="margin-top: 12px;">
+        <label class="checkbox-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+          <input type="checkbox" id="register-consent" style="width: 16px; height: 16px; cursor: pointer;">
+          <span style="font-size: 12px; color: var(--text-m);">
+            Я принимаю <a href="https://docs.google.com/document/d/1y_1bcSHD8Uk0zHwFGxYz1OPzi0v9wVbJpM4hczHldXs/edit?usp=sharing" target="_blank" style="color: var(--accent); text-decoration: underline;">условия использования</a> и даю согласие на обработку персональных данных
+          </span>
+        </label>
+      </div>
       ` : ''}
       <p class="auth-switch">
         ${authMode === 'login'
@@ -209,10 +217,20 @@ async function submitAuth() {
     errEl.innerHTML = `<div class="error-msg">Заполните все поля</div>`;
     return;
   }
+  if (authMode === 'register') {
+    const consentCheckbox = document.getElementById('register-consent');
+    if (!consentCheckbox || !consentCheckbox.checked) {
+      errEl.innerHTML = `<div class="error-msg">Необходимо принять условия использования</div>`;
+      return;
+    }
+  }
+  
   try {
     const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
     const data = await api('POST', endpoint, { username, password });
     authToken = data.token;
+    localStorage.setItem('wb_token', data.token);
+    localStorage.setItem('wb_username', data.username);
     currentUser = data.username;
     await Promise.all([loadSearches(), loadDashboards()]);
     navigate('search');
@@ -303,6 +321,8 @@ function bindLayout() {
 }
 
 async function logout() {
+  localStorage.removeItem('wb_token');
+  localStorage.removeItem('wb_username');
   try { await api('POST', '/api/auth/logout'); } catch {}
   authToken = null; currentUser = null;
   renderApp();
@@ -432,15 +452,18 @@ function startPoll(searchId) {
       const s = await api('GET', `/api/searches/${searchId}`);
       const idx = searches.findIndex(x => x.id === searchId);
       if (idx !== -1) searches[idx] = s;
+      
       if (s.status === 'done' || s.status === 'error') {
         clearInterval(pollTimer); pollTimer = null;
         if (s.status === 'done') {
           toast(`Готово! Найдено ${s.product_count} товаров`, 'success');
-          if (page === 'search') renderSearchPage();
         } else {
           toast('Ошибка парсинга. Попробуйте другой запрос.', 'error');
         }
+        // ← ВОТ ЭТА СТРОКА — обновляем страницу поиска
+        if (page === 'search') renderSearchPage();
       } else {
+        // Обновляем только статус в реальном времени (без полной перерисовки)
         if (page === 'search') {
           const listEl = document.querySelector('.searches-list');
           if (listEl) listEl.outerHTML = renderSearchList();
@@ -963,7 +986,43 @@ function wbLogoSvg(size = 24) {
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 async function boot() {
-  setTheme('dark');
+  // 1. Восстанавливаем тему
+  const savedTheme = localStorage.getItem('wb_theme');
+  if (savedTheme === 'light' || savedTheme === 'dark') {
+    setTheme(savedTheme);
+  } else {
+    setTheme('dark');
+  }
+  
+  // 2. Восстанавливаем токен
+  const savedToken = localStorage.getItem('wb_token');
+  if (savedToken) {
+    authToken = savedToken;
+    
+    // 3. ПРОВЕРЯЕМ, работает ли токен на сервере
+    try {
+      // Делаем простой запрос, который требует авторизации
+      await api('GET', '/api/searches');
+      
+      // Если дошли сюда — токен валидный
+      const savedUsername = localStorage.getItem('wb_username');
+      if (savedUsername) {
+        currentUser = savedUsername;
+      }
+      
+      // Загружаем данные
+      await Promise.all([loadSearches(), loadDashboards()]);
+      
+    } catch (e) {
+      // Токен невалидный (сервер перезапустился или сессия истекла)
+      console.warn('Токен невалиден, очищаем', e);
+      localStorage.removeItem('wb_token');
+      localStorage.removeItem('wb_username');
+      authToken = null;
+      currentUser = null;
+    }
+  }
+  
   renderApp();
   if (window.lucide) lucide.createIcons();
 }

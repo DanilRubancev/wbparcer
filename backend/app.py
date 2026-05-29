@@ -44,6 +44,9 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
+            consent_agreed BOOLEAN DEFAULT 0,
+            consent_date TIMESTAMP,
+            consent_ip TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -88,9 +91,14 @@ def init_db():
     """)
     try:
         conn.execute(
-            "INSERT OR IGNORE INTO users (username, password) VALUES (?, ?)",
-            ("demo", generate_password_hash("demo123"))
+            """INSERT OR IGNORE INTO users 
+               (username, password, consent_agreed, consent_date, consent_ip) 
+               VALUES (?, ?, ?, ?, ?)""",
+            ("demo", generate_password_hash("demo123"), 1, datetime.now().isoformat(), "127.0.0.1")
         )
+        conn.execute("ALTER TABLE users ADD COLUMN consent_agreed BOOLEAN DEFAULT 0")
+        conn.execute("ALTER TABLE users ADD COLUMN consent_date TIMESTAMP")
+        conn.execute("ALTER TABLE users ADD COLUMN consent_ip TEXT")
         conn.commit()
     except Exception:
         pass
@@ -263,7 +271,7 @@ def _normalize_product(raw: dict) -> dict:
 
 # Все известные рабочие dest-коды. При 429 пробуем следующий с паузой.
 # Порядок подобран по результатам диагностики (первые — наиболее стабильные)
-_WB_DESTS = [-1257786, 12358062, -2133462, -1059500]
+_WB_DESTS = [-1257786, 12358062, -2133462, -1059500, -1581744, 1259570991, -1569611]
 
 # Единый persistent session — важно не пересоздавать его между запросами
 _wb_session.headers.update({
@@ -287,7 +295,7 @@ _last_wb_request: float = 0.0
 
 # Пауза между попытками нарастает с каждым 429.
 # WB считает запросы в окне ~10 сек — нужно выходить за это окно.
-_RETRY_DELAYS = [4, 7, 11, 16]   # сек ожидания перед каждым dest
+_RETRY_DELAYS = [4, 7, 11, 16, 21, 25, 30]   # сек ожидания перед каждым dest
 
 def _wb_get(params: dict, timeout: int = 15):
     """
@@ -677,17 +685,29 @@ def login():
 
 
 @app.post("/api/auth/register")
+@app.post("/api/auth/register")
 def register():
     data = request.json or {}
     username = data.get("username", "").strip()
     password = data.get("password", "")
+    consent = data.get("consent", True)
+
     if not username or not password:
         return jsonify({"error": "Заполните все поля"}), 400
     if len(password) < 6:
         return jsonify({"error": "Пароль минимум 6 символов"}), 400
+
     conn = get_db()
     try:
-        conn.execute("INSERT INTO users (username, password) VALUES (?,?)", (username, generate_password_hash(password)))
+        conn.execute(
+            """INSERT INTO users (username, password, consent_agreed, consent_date, consent_ip) 
+               VALUES (?,?,?,?,?)""",
+            (username,
+             generate_password_hash(password),
+             1 if consent else 0,
+             datetime.now().isoformat(),
+             request.remote_addr)
+        )
         conn.commit()
         row = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
         import secrets
@@ -780,6 +800,17 @@ def delete_search(search_id: int):
         return err
     uid = get_current_user()
     conn = get_db()
+
+    # Проверяем, есть ли сохранённые дашборды
+    dashboard_count = conn.execute(
+        "SELECT COUNT(*) FROM dashboards WHERE search_id = ?",
+        (search_id,)
+    ).fetchone()[0]
+
+    if dashboard_count > 0:
+        conn.close()
+        return jsonify({"error": "Нельзя удалить поиск: сначала удалите дашборд из сохраннёных"}), 400
+
     conn.execute("DELETE FROM products WHERE search_id=?", (search_id,))
     conn.execute("DELETE FROM searches WHERE id=? AND user_id=?", (search_id, uid))
     conn.commit()
